@@ -81,6 +81,8 @@ The repository is open source and available at <a href="{}">GitHub</a>.
         "report": "Report the bug in English here: [GitHub]({}/issues/new?labels=bug)",
         "feature": "Suggest the feature in English here: [GitHub]({}/issues/new?labels=enhancement)",
         "question": "Ask the question in English here: [GitHub]({}/issues/new?labels=question)",
+        "fetching_top_albums": "Fetching top albums...",
+        "top_albums_year": "Top albums of {}",
     },
     "it": {
         "welcome": "Benvenuto! Usa /settings per impostare il tuo nome utente stats.fm. Usa /help per visualizzare i comandi disponibili.",
@@ -164,6 +166,8 @@ Il repository è open source e disponibile su <a href="https://github.com/techke
         "report": "Segnala l'errore in inglese qui: [GitHub]({}/issues/new?labels=bug)",
         "feature": "Suggerisci la funzionalità in inglese qui: [GitHub]({}/issues/new?labels=enhancement)",
         "question": "Invia la tua domanda in inglese qui: [GitHub]({}/issues/new?labels=question)",
+        "fetching_top_albums": "Recupero degli album più ascoltati...",
+        "top_albums_year": "Album più ascoltati del {}",
     },
 }
 

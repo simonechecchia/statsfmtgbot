@@ -5,6 +5,7 @@ import concurrent.futures
 from config import API_BASE_URL, USER_AGENT, ENV
 import random
 from collections import Counter
+from database import get_user_setting
 from utils import format_listening_time
 
 import sys, time
@@ -222,7 +223,7 @@ def select_diverse_recommendations(scored_items, limit):
     return selected
 
 
-@timed_cache(seconds=7200)
+@timed_cache(seconds=120)
 def get_all_items(username, period, item_type):
     all_items = []
     offset = 0
@@ -244,6 +245,10 @@ def get_all_items(username, period, item_type):
 
     return all_items
 
+@time_counter
+def get_user_now(username):
+    data = api_get(f"{API_BASE_URL}/users/{username}/streams/current")
+    return data["item"] if data else None
 
 @time_counter
 def format_item_info(item, item_type, username):
@@ -362,3 +367,21 @@ def get_total_listening_time(username, item_type, item_id):
 @timed_cache(seconds=7200)
 def get_album(album_id):
     return api_get(f"{API_BASE_URL}/albums/{album_id}")
+
+@time_counter
+@timed_cache(seconds=7200)
+def get_group_usernames(bot, message):
+    try:
+        members = bot.get_chat_members(message.chat.id)
+        
+        usernames = [
+            member.user.username for member in members 
+            if (member.user.username is not None and 
+                (get_user_setting(member.user.username, "username", "")) != "")
+        ]
+        
+        return usernames
+    
+    except Exception as e:
+        print(f"Error retrieving usernames: {e}")
+        return []

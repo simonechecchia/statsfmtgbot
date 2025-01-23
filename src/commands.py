@@ -1,3 +1,4 @@
+from datetime import datetime
 import random
 import re
 import requests
@@ -16,8 +17,10 @@ from api_client import (
     get_all_items,
     format_item_info,
     get_first_last_listen,
+    get_group_usernames,
     get_total_listening_time,
     get_complex_recommendations,
+    get_user_now,
 )
 from spotify_utils import (
     get_spotify_auth_url,
@@ -692,7 +695,58 @@ def register_commands(bot):
             except Exception as e:
                 print(f"Error sending error message: {str(e)}")
     
-    @bot.message_handler(commands=["topalbumsyear"])
+    @bot.message_handler(commands=["albbyyears"])
+    def handle_top_albums_by_year(message):
+        try:
+            chat_id = message.chat.id
+            lang = get_user_language(chat_id)
+            temp_message = bot.reply_to(message, get_text(lang, "fetching_top_albums"))
+            username = get_user_setting(chat_id, "username", "")
+            if not username:
+                bot.delete_message(chat_id, temp_message.message_id)
+                bot.reply_to(message, get_text(lang, "set_username_first"))
+                return
+            all_items = get_all_items(username, "lifetime", "albums")
+
+            top_albums_by_year = {}
+
+            for year in range(1971, datetime.now().year+1):
+                for album in all_items:
+                    release_date = album['album'].get('releaseDate')
+                    if release_date:
+                        try:
+                            release_year = datetime.fromtimestamp(release_date / 1000).year
+                            if release_year == year:
+                                if year not in top_albums_by_year:
+                                    top_albums_by_year[year] = album
+                                    break
+                        except Exception as e:
+                            continue
+
+            # response = get_text(lang, "top_albums_by_year") + ":\n\n"
+            response = "\n\n"
+            for year, album in top_albums_by_year.items():
+                response += (
+                    "{}: [{}](https://stats.fm/album/{}) - [{}](https://stats.fm/artist/{}) - {} {}\n".format(
+                        year,
+                        album['album']['name'].replace('[', '\\[').replace(']', '\\]'),
+                        album['album']['id'],
+                        album['album']['artists'][0]['name'] if len(album['album']['artists']) > 0 else 'N/A',
+                        album['album']['artists'][0]['id'] if len(album['album']['artists']) > 0 else '',
+                        album['streams'],
+                        get_text(lang, 'streams')
+                    )
+                )
+
+            bot.delete_message(chat_id, temp_message.message_id)
+            send_long_message(bot, chat_id, response, parse_mode="Markdown")
+        except Exception as e:
+            print(f"Error in albbyyears: {e}")
+            bot.delete_message(chat_id, temp_message.message_id)
+            bot.reply_to(message, get_text(lang, "set_username_first"))
+            return
+
+    @bot.message_handler(commands=["albbyyear"])
     def handle_top_albums(message):
         try:
             chat_id = message.chat.id
@@ -718,8 +772,17 @@ def register_commands(bot):
             
             all_items = get_all_items(username, "lifetime", "albums")
 
-            top_albums = [album for album in all_items if album['date'].year == int(year)]
-            
+            top_albums = []
+            for album in all_items:
+                release_date = album['album'].get('releaseDate')
+                if release_date:
+                    try:
+                        release_year = datetime.fromtimestamp(release_date / 1000).year
+                        if release_year == int(year):
+                            top_albums.append(album)
+                    except Exception as e:
+                        continue
+
             if not top_albums:
                 bot.delete_message(chat_id, temp_message.message_id)
                 bot.reply_to(message, get_text(lang, "no_albums_found"))
@@ -727,7 +790,7 @@ def register_commands(bot):
             
             response = f"{get_text(lang, 'top_albums_year', year)}:\n\n"
             for i, album in enumerate(top_albums[:10], 1):
-                response += f"{i}. [{album['name']}](https://stats.fm/album/{album['id']}) - [{album['artist']['name']}](https://stats.fm/artist/{album['artist']['id']}) - {album['streams']} streams\n"
+                response += f"{i}. [{album['album']['name']}](https://stats.fm/album/{album['album']['id']}) - [{album['album']['artists'][0]['name'] if len(album['album']['artists'])>0 else 'N/A'}](https://stats.fm/artist/{album['album']['artists'][0]['id'] if len(album['album']['artists'])>0 else ''}) - {album['streams']} streams\n"
             
             bot.delete_message(chat_id, temp_message.message_id)
             send_long_message(bot, chat_id, response, parse_mode="Markdown")
@@ -739,6 +802,64 @@ def register_commands(bot):
                 bot.reply_to(message, get_text(lang, "error_top_albums"))
             except Exception as e:
                 print(f"Error sending error message: {str(e)}")
+    
+    @bot.message_handler(commands=["now"])
+    def handle_now(message):
+        try:
+            chat_id = message.chat.id
+            lang = get_user_language(chat_id)
+            username = get_user_setting(chat_id, "username", "")
+
+            if not username:
+                bot.reply_to(message, get_text(lang, "set_username_first"))
+                return
+            temp_message = bot.send_message(
+                chat_id, get_text(lang, "generating_now_playing")
+            )
+            now = get_user_now(username)
+            if now:
+                response = f"[{now['track']['name']}](https://stats.fm/track/{now['track']['id']})\n"
+                response += f"{get_text(lang, 'artist').capitalize()}: [{now['track']['artists'][0]['name']}](https://stats.fm/artist/{now['track']['artists'][0]['id']})\n"
+                response += f"Album: [{now['track']['albums'][0]['name']}](https://stats.fm/album/{now['track']['albums'][0]['id']})\n"
+                # response += f"{get_text(lang, 'streams').capitalize()}: {now['track']['streams']} - #{now['track']['position']} {get_text(lang, 'mpao')}\n"
+                bot.delete_message(chat_id, temp_message.message_id)
+                if now['track']['albums'][0]['image'] != "N/A":
+                    bot.send_photo(
+                        chat_id,
+                        now['track']['albums'][0]['image'],
+                        caption=response,
+                        parse_mode="Markdown",
+                    )
+                else:
+                    bot.send_message(chat_id, response, parse_mode="Markdown")
+            else:
+                bot.delete_message(chat_id, temp_message.message_id)
+                bot.reply_to(message, get_text(lang, "no_now_playing"))
+        except Exception as e:
+            print(f"Error sending now playing: {str(e)}")
+            try:
+                bot.send_message(chat_id, get_text(lang, "error_occurred"))
+            except Exception as e:
+                print(f"Error sending error message: {str(e)}")
+
+    @bot.message_handler(commands=["nowplaying"])
+    def handle_nowplaying(message):
+        # check if group chat
+        if message.chat.type != "group" and message.chat.type != "supergroup":
+            bot.reply_to(message, "This command is only available in groups.")
+            return
+        usernames = get_group_usernames(bot, message.chat.id)
+        # foreach user do now = get_user_now(username)
+        now = []
+        for username in usernames:
+            now.append(get_user_now(username))
+        # if now is empty, reply with no now playing
+        if not any(now):
+            bot.reply_to(message, "No one is currently listening to music.")
+            return
+        # else, reply with a college of all now playing
+        
+
 
 
 def settings_menu(chat_id, lang):
