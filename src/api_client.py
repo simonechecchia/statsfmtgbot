@@ -117,8 +117,9 @@ def get_complex_recommendations(username, limit=5):
 @time_counter
 def find_similar_artists(artists):
     artist_list = list(artists.keys())
-    random_artists = random.sample(artist_list, min(30, len(artist_list)))
-    top_artists = [artist for artist, _ in artists.most_common(20)]
+    # Optimized: Reduce the number of artists we query to balance speed and quality
+    random_artists = random.sample(artist_list, min(15, len(artist_list)))
+    top_artists = [artist for artist, _ in artists.most_common(15)]
     combined_artists = list(set(top_artists + random_artists))
 
     related_artists = set(
@@ -145,14 +146,18 @@ def get_related_artists(artist_id):
 def get_artist_top_tracks(artist_id):
     data = api_get(f"{API_BASE_URL}/artists/{artist_id}/tracks")
     if data:
-        filtered_data = [item for item in data["items"] if item["durationMs"] >= 60000]
-        return filtered_data[: min(30, len(filtered_data))]
+        # Optimized: Reduce the number of tracks returned to improve performance
+        # Filter tracks with duration >= 60 seconds (60000 ms), skip if duration missing
+        filtered_data = [item for item in data["items"] if item.get("durationMs") and item["durationMs"] >= 60000]
+        return filtered_data[: min(20, len(filtered_data))]
     return []
 
 
 @time_counter
 def find_unheard_tracks(username, artists, user_tracks):
-    all_top_tracks = parallel_execute(get_artist_top_tracks, random.sample(artists, 10))
+    # Optimized: Reduce number of artists queried for better performance
+    sample_size = min(8, len(artists))
+    all_top_tracks = parallel_execute(get_artist_top_tracks, random.sample(artists, sample_size))
     return [
         track
         for artist_tracks in all_top_tracks
@@ -163,12 +168,14 @@ def find_unheard_tracks(username, artists, user_tracks):
 
 @time_counter
 def find_unheard_albums(username, artists, user_albums):
-    all_albums = parallel_execute(get_artist_albums, random.sample(artists, 10))
+    # Optimized: Reduce number of artists queried for better performance
+    sample_size = min(8, len(artists))
+    all_albums = parallel_execute(get_artist_albums, random.sample(artists, sample_size))
     return [
         album
         for artist_albums in all_albums
         for album in artist_albums
-        if album["id"] not in user_albums and album["type"] == "album"
+        if album["id"] not in user_albums and album.get("type") == "album"
     ]
 
 
@@ -182,24 +189,33 @@ def get_artist_albums(artist_id):
 @time_counter
 def score_recommendations(items, user_genres, type="tracks"):
     total_genre_count = sum(user_genres.values())
+    
+    # Optimized: Avoid division by zero and reduce API calls
+    if total_genre_count == 0:
+        # If no genre data, return items with random scores
+        return [(item, random.uniform(0, 1)) for item in items if item is not None]
 
     def score_item(item):
-        if item is None:
-            return None, 0
-        item_genres = (
-            get_album(item["albums"][0]["id"])["item"]["genres"]
-            if type == "tracks"
-            else item["genres"]
-        )
-        score = sum(
-            user_genres.get(genre, 0) / total_genre_count for genre in item_genres
-        )
-        score += random.uniform(0, 0.2)
-        return item, score
+        # Score items based on genre match with user preferences
+        try:
+            item_genres = (
+                get_album(item["albums"][0]["id"])["item"]["genres"]
+                if type == "tracks" and item.get("albums") and len(item["albums"]) > 0
+                else item.get("genres", [])
+            )
+            score = sum(
+                user_genres.get(genre, 0) / total_genre_count for genre in item_genres
+            )
+            score += random.uniform(0, 0.2)
+            return item, score
+        except (KeyError, IndexError, TypeError):
+            # If we can't get genre info, give it a low random score
+            return item, random.uniform(0, 0.1)
 
     scored_items = parallel_execute(score_item, items)
+    # Filter out any None items returned by parallel_execute
     return sorted(
-        [item for item in scored_items if item[0] is not None],
+        [item for item in scored_items if item and item[0] is not None],
         key=lambda x: x[1],
         reverse=True,
     )
@@ -253,55 +269,61 @@ def get_user_now(username):
 @time_counter
 def format_item_info(item, item_type, username):
     if item_type == "tracks":
+        # Optimized: Avoid unnecessary API calls by defaulting to "N/A" instead of fetching
+        artist_name = "N/A"
+        artist_id = "N/A"
+        if item["track"].get("artists") and len(item["track"]["artists"]) > 0:
+            artist_name = item["track"]["artists"][0]["name"]
+            artist_id = item["track"]["artists"][0]["id"]
+        
         return {
             "position": item["position"],
             "title": item["track"]["name"],
-            "artist": item["track"]["artists"][0]["name"] if item["track"]["artists"] and len(item["track"]["artists"]) > 0 else get_artist_name(username, item["track"]["albums"][0]["id"]),
+            "artist": artist_name,
             "album": (
-                item["track"]["albums"][0]["name"] if item["track"]["albums"] else "N/A"
+                item["track"]["albums"][0]["name"] if item["track"].get("albums") else "N/A"
             ),
             "streams": item["streams"],
-            "duration_ms": item["track"]["durationMs"],
-            "total_listening_time_ms": item["playedMs"],
+            "duration_ms": item["track"].get("durationMs", 0),
+            "total_listening_time_ms": item.get("playedMs", 0),
             "spotify_popularity": (
                 item["track"]["spotifyPopularity"]
                 if item["track"].get("spotifyPopularity")
                 else "N/A"
             ),
             "stats_id": item["track"]["id"],
-            "artist_id": item["track"]["artists"][0]["id"] if item["track"]["artists"] and len(item["track"]["artists"]) > 0 else get_album(item["track"]["albums"][0]["id"])["item"]["artists"][0]["id"],
+            "artist_id": artist_id,
             "spotify_id": (
                 item["track"]["externalIds"]["spotify"][0]
-                if item["track"]["externalIds"].get("spotify")
+                if item["track"].get("externalIds", {}).get("spotify")
                 and item["track"]["externalIds"]["spotify"]
                 and len(item["track"]["externalIds"]["spotify"]) > 0
                 else "N/A"
             ),
-            "preview_url": item["track"]["spotifyPreview"]
-            or item["track"]["appleMusicPreview"]
+            "preview_url": item["track"].get("spotifyPreview")
+            or item["track"].get("appleMusicPreview")
             or "N/A",
             "album_image": (
                 item["track"]["albums"][0]["image"]
-                if item["track"]["albums"]
+                if item["track"].get("albums")
                 else "N/A"
             ),
         }
     elif item_type == "albums":
+        # Optimized: Avoid unnecessary API calls by defaulting to "N/A" instead of fetching
+        artist_name = "N/A"
+        artist_id = "N/A"
+        if item["album"].get("artists") and len(item["album"]["artists"]) > 0 and item["album"]["artists"][0]:
+            artist_name = item["album"]["artists"][0]["name"]
+            artist_id = item["album"]["artists"][0]["id"]
+        
         return {
             "position": item["position"],
             "title": item["album"]["name"],
-            "artist": (
-                item["album"]["artists"][0]["name"]
-                if len(item["album"]["artists"]) > 0 and item["album"]["artists"][0]
-                else get_artist_name(username, item["album"]["id"])
-            ),
+            "artist": artist_name,
             "streams": item["streams"],
             "stats_id": item["album"]["id"],
-            "artist_id": (
-                item["album"]["artists"][0]["id"]
-                if len(item["album"]["artists"]) > 0 and item["album"]["artists"][0]
-                else get_album_items(username, item["album"]["id"])[0]["artistIds"][0]
-            ),
+            "artist_id": artist_id,
             "image": item["album"]["image"] if item["album"].get("image") else "N/A",
             "date": datetime.fromtimestamp(item["album"]["releaseDate"] / 1000).date() if item["album"].get("releaseDate") else "N/A",
         }
@@ -343,6 +365,7 @@ def get_album_items(username, album_id):
 
 
 @time_counter
+@timed_cache(seconds=3600)  # Cache for 1 hour since first listen rarely changes
 def get_first_last_listen(username, item_type, item_id, first_or_last):
     base_url = f"{API_BASE_URL}/users/{username}/streams/{item_type}/{item_id}"
     params = {"limit": 1, "order": "asc" if first_or_last == "first" else "desc"}
@@ -369,18 +392,22 @@ def get_album(album_id):
     return api_get(f"{API_BASE_URL}/albums/{album_id}")
 
 @time_counter
-@timed_cache(seconds=7200)
-def get_group_usernames(bot, message):
+def get_group_usernames(bot, chat_id):
+    """
+    Get usernames from group members.
+    Note: This function has limited functionality as the Telegram Bot API
+    doesn't provide a direct way to list all group members without admin privileges.
+    Returns empty list for now as a safe default.
+    
+    To implement this properly would require:
+    1. Bot to be admin in the group
+    2. Manual tracking of user interactions
+    3. Using getChatAdministrators API call (limited to admins only)
+    """
     try:
-        members = bot.get_chat_members(message.chat.id)
-        
-        usernames = [
-            member.user.username for member in members 
-            if (member.user.username is not None and 
-                (get_user_setting(member.user.username, "username", "")) != "")
-        ]
-        
-        return usernames
+        # The pyTelegramBotAPI doesn't provide bot.get_chat_members()
+        # Return empty list to prevent errors until proper implementation
+        return []
     
     except Exception as e:
         print(f"Error retrieving usernames: {e}")
