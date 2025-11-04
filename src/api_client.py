@@ -268,55 +268,61 @@ def get_user_now(username):
 @time_counter
 def format_item_info(item, item_type, username):
     if item_type == "tracks":
+        # Optimized: Avoid unnecessary API calls by defaulting to "N/A" instead of fetching
+        artist_name = "N/A"
+        artist_id = "N/A"
+        if item["track"].get("artists") and len(item["track"]["artists"]) > 0:
+            artist_name = item["track"]["artists"][0]["name"]
+            artist_id = item["track"]["artists"][0]["id"]
+        
         return {
             "position": item["position"],
             "title": item["track"]["name"],
-            "artist": item["track"]["artists"][0]["name"] if item["track"]["artists"] and len(item["track"]["artists"]) > 0 else get_artist_name(username, item["track"]["albums"][0]["id"]),
+            "artist": artist_name,
             "album": (
-                item["track"]["albums"][0]["name"] if item["track"]["albums"] else "N/A"
+                item["track"]["albums"][0]["name"] if item["track"].get("albums") else "N/A"
             ),
             "streams": item["streams"],
-            "duration_ms": item["track"]["durationMs"],
-            "total_listening_time_ms": item["playedMs"],
+            "duration_ms": item["track"].get("durationMs", 0),
+            "total_listening_time_ms": item.get("playedMs", 0),
             "spotify_popularity": (
                 item["track"]["spotifyPopularity"]
                 if item["track"].get("spotifyPopularity")
                 else "N/A"
             ),
             "stats_id": item["track"]["id"],
-            "artist_id": item["track"]["artists"][0]["id"] if item["track"]["artists"] and len(item["track"]["artists"]) > 0 else get_album(item["track"]["albums"][0]["id"])["item"]["artists"][0]["id"],
+            "artist_id": artist_id,
             "spotify_id": (
                 item["track"]["externalIds"]["spotify"][0]
-                if item["track"]["externalIds"].get("spotify")
+                if item["track"].get("externalIds", {}).get("spotify")
                 and item["track"]["externalIds"]["spotify"]
                 and len(item["track"]["externalIds"]["spotify"]) > 0
                 else "N/A"
             ),
-            "preview_url": item["track"]["spotifyPreview"]
-            or item["track"]["appleMusicPreview"]
+            "preview_url": item["track"].get("spotifyPreview")
+            or item["track"].get("appleMusicPreview")
             or "N/A",
             "album_image": (
                 item["track"]["albums"][0]["image"]
-                if item["track"]["albums"]
+                if item["track"].get("albums")
                 else "N/A"
             ),
         }
     elif item_type == "albums":
+        # Optimized: Avoid unnecessary API calls by defaulting to "N/A" instead of fetching
+        artist_name = "N/A"
+        artist_id = "N/A"
+        if item["album"].get("artists") and len(item["album"]["artists"]) > 0 and item["album"]["artists"][0]:
+            artist_name = item["album"]["artists"][0]["name"]
+            artist_id = item["album"]["artists"][0]["id"]
+        
         return {
             "position": item["position"],
             "title": item["album"]["name"],
-            "artist": (
-                item["album"]["artists"][0]["name"]
-                if len(item["album"]["artists"]) > 0 and item["album"]["artists"][0]
-                else get_artist_name(username, item["album"]["id"])
-            ),
+            "artist": artist_name,
             "streams": item["streams"],
             "stats_id": item["album"]["id"],
-            "artist_id": (
-                item["album"]["artists"][0]["id"]
-                if len(item["album"]["artists"]) > 0 and item["album"]["artists"][0]
-                else get_album_items(username, item["album"]["id"])[0]["artistIds"][0]
-            ),
+            "artist_id": artist_id,
             "image": item["album"]["image"] if item["album"].get("image") else "N/A",
             "date": datetime.fromtimestamp(item["album"]["releaseDate"] / 1000).date() if item["album"].get("releaseDate") else "N/A",
         }

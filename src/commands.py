@@ -781,13 +781,15 @@ def register_commands(bot):
             
             all_items = get_all_items(username, "lifetime", "albums")
 
+            # Optimized: Filter albums in a single pass
+            target_year = int(year)
             top_albums = []
             for album in all_items:
                 release_date = album['album'].get('releaseDate')
                 if release_date:
                     try:
                         release_year = datetime.fromtimestamp(release_date / 1000).year
-                        if release_year == int(year):
+                        if release_year == target_year:
                             top_albums.append(album)
                     except Exception as e:
                         continue
@@ -797,10 +799,14 @@ def register_commands(bot):
                 bot.reply_to(message, get_text(lang, "no_albums_found"))
                 return
             
-            response = f"{get_text(lang, 'top_albums_year', year)}:\n\n"
+            # Optimized: Build response using list and join
+            response_lines = [f"{get_text(lang, 'top_albums_year', year)}:\n\n"]
             for i, album in enumerate(top_albums[:10], 1):
-                response += f"{i}. [{album['album']['name']}](https://stats.fm/album/{album['album']['id']}) - [{album['album']['artists'][0]['name'] if len(album['album']['artists'])>0 else 'N/A'}](https://stats.fm/artist/{album['album']['artists'][0]['id'] if len(album['album']['artists'])>0 else ''}) - {album['streams']} streams\n"
+                artist_name = album['album']['artists'][0]['name'] if len(album['album']['artists'])>0 else 'N/A'
+                artist_id = album['album']['artists'][0]['id'] if len(album['album']['artists'])>0 else ''
+                response_lines.append(f"{i}. [{album['album']['name']}](https://stats.fm/album/{album['album']['id']}) - [{artist_name}](https://stats.fm/artist/{artist_id}) - {album['streams']} streams\n")
             
+            response = ''.join(response_lines)
             bot.delete_message(chat_id, temp_message.message_id)
             send_long_message(bot, chat_id, response, parse_mode="Markdown")
         except Exception as e:
