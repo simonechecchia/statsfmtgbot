@@ -147,7 +147,8 @@ def get_artist_top_tracks(artist_id):
     data = api_get(f"{API_BASE_URL}/artists/{artist_id}/tracks")
     if data:
         # Optimized: Reduce the number of tracks returned to improve performance
-        filtered_data = [item for item in data["items"] if item.get("durationMs", 0) >= 60000]
+        # Filter tracks with duration >= 60 seconds (60000 ms), skip if duration missing
+        filtered_data = [item for item in data["items"] if item.get("durationMs") and item["durationMs"] >= 60000]
         return filtered_data[: min(20, len(filtered_data))]
     return []
 
@@ -392,13 +393,21 @@ def get_album(album_id):
 
 @time_counter
 def get_group_usernames(bot, chat_id):
-    """Get usernames from group members. Note: This requires admin permissions."""
+    """
+    Get usernames from group members.
+    Note: This function has limited functionality as the Telegram Bot API
+    doesn't provide a direct way to list all group members without admin privileges.
+    Returns empty list for now as a safe default.
+    """
     try:
-        # Note: bot.get_chat_members() doesn't exist in pyTelegramBotAPI
-        # This is a placeholder implementation that would need proper API access
-        # For now, return empty list as this feature requires additional bot permissions
-        # and API calls that may not be available
-        print("Warning: get_group_usernames needs proper implementation with bot permissions")
+        # The pyTelegramBotAPI doesn't provide bot.get_chat_members()
+        # To implement this properly would require:
+        # 1. Bot to be admin in the group
+        # 2. Manual tracking of user interactions
+        # 3. Using getChatAdministrators API call (limited to admins only)
+        # For now, return empty list to prevent errors
+        if ENV == "debug" or ENV == "development":
+            print("Warning: get_group_usernames returns empty list - needs proper implementation")
         return []
     
     except Exception as e:

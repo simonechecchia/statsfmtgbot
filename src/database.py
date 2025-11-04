@@ -7,10 +7,16 @@ from config import DATABASE_NAME, encrypt_message, decrypt_message
 _thread_local = threading.local()
 
 def get_db_connection():
-    """Get a thread-safe database connection."""
+    """Get a thread-safe database connection with proper lifecycle management."""
     if not hasattr(_thread_local, 'conn') or _thread_local.conn is None:
-        _thread_local.conn = sqlite3.connect(DATABASE_NAME)
+        _thread_local.conn = sqlite3.connect(DATABASE_NAME, timeout=10.0)
     return _thread_local.conn
+
+def close_db_connection():
+    """Close the thread-local database connection if it exists."""
+    if hasattr(_thread_local, 'conn') and _thread_local.conn is not None:
+        _thread_local.conn.close()
+        _thread_local.conn = None
 
 def init_db():
     try:
