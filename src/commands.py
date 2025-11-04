@@ -715,13 +715,15 @@ def register_commands(bot):
             all_items = get_all_items(username, "lifetime", "albums")
 
             # Optimized: Single pass through albums instead of nested loops
+            # Note: Albums are already sorted by stream count from the API
+            # So the first album found for each year is the top album for that year
             top_albums_by_year = {}
             for album in all_items:
                 release_date = album['album'].get('releaseDate')
                 if release_date:
                     try:
                         release_year = datetime.fromtimestamp(release_date / 1000).year
-                        # Only store the first album for each year (since albums are already sorted by streams)
+                        # Only store the first (top) album for each year
                         if release_year not in top_albums_by_year:
                             top_albums_by_year[release_year] = album
                     except Exception as e:

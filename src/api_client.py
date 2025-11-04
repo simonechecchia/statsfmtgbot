@@ -196,8 +196,7 @@ def score_recommendations(items, user_genres, type="tracks"):
         return [(item, random.uniform(0, 1)) for item in items if item is not None]
 
     def score_item(item):
-        if item is None:
-            return None, 0
+        # Score items based on genre match with user preferences
         try:
             item_genres = (
                 get_album(item["albums"][0]["id"])["item"]["genres"]
@@ -214,8 +213,9 @@ def score_recommendations(items, user_genres, type="tracks"):
             return item, random.uniform(0, 0.1)
 
     scored_items = parallel_execute(score_item, items)
+    # Filter out any None items returned by parallel_execute
     return sorted(
-        [item for item in scored_items if item[0] is not None],
+        [item for item in scored_items if item and item[0] is not None],
         key=lambda x: x[1],
         reverse=True,
     )
@@ -398,16 +398,15 @@ def get_group_usernames(bot, chat_id):
     Note: This function has limited functionality as the Telegram Bot API
     doesn't provide a direct way to list all group members without admin privileges.
     Returns empty list for now as a safe default.
+    
+    To implement this properly would require:
+    1. Bot to be admin in the group
+    2. Manual tracking of user interactions
+    3. Using getChatAdministrators API call (limited to admins only)
     """
     try:
         # The pyTelegramBotAPI doesn't provide bot.get_chat_members()
-        # To implement this properly would require:
-        # 1. Bot to be admin in the group
-        # 2. Manual tracking of user interactions
-        # 3. Using getChatAdministrators API call (limited to admins only)
-        # For now, return empty list to prevent errors
-        if ENV == "debug" or ENV == "development":
-            print("Warning: get_group_usernames returns empty list - needs proper implementation")
+        # Return empty list to prevent errors until proper implementation
         return []
     
     except Exception as e:
