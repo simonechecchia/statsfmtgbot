@@ -602,18 +602,22 @@ def register_commands(bot):
             ]
 
             if all_items:
-                response = f"Top {number} {get_text(lang, item_type)} {get_text(lang, period)}:\n\n"
+                # Optimized: Build response using list and join for better performance
+                response_lines = [f"Top {number} {get_text(lang, item_type)} {get_text(lang, period)}:\n\n"]
+                streams_text = get_text(lang, 'streams')
+                
                 for item in all_items:
                     item_info = format_item_info(item, item_type, username)
                     if item_type == "tracks":
-                        response += f"{item_info['position']}. [{item_info['title']}](https://stats.fm/track/{item_info['stats_id']}) - {item_info['artist']} ({item_info['streams']} {get_text(lang, 'streams')})\n"
+                        response_lines.append(f"{item_info['position']}. [{item_info['title']}](https://stats.fm/track/{item_info['stats_id']}) - {item_info['artist']} ({item_info['streams']} {streams_text})\n")
                     elif item_type == "albums":
-                        response += f"{item_info['position']}. [{item_info['title']}](https://stats.fm/album/{item_info['stats_id']}) ({item_info['streams']} {get_text(lang, 'streams')})\n"
+                        response_lines.append(f"{item_info['position']}. [{item_info['title']}](https://stats.fm/album/{item_info['stats_id']}) ({item_info['streams']} {streams_text})\n")
                     elif item_type == "artists":
-                        response += f"{item_info['position']}. [{item_info['name']}](https://stats.fm/artist/{item_info['stats_id']}) ({item_info['streams']} {get_text(lang, 'streams')})\n"
+                        response_lines.append(f"{item_info['position']}. [{item_info['name']}](https://stats.fm/artist/{item_info['stats_id']}) ({item_info['streams']} {streams_text})\n")
                     elif item_type == "genres":
-                        response += f"{item_info['position']}. [{item_info['name'].capitalize()}](https://stats.fm/genre/{item_info['name']}) ({item_info['streams']} {get_text(lang, 'streams')})\n"
-
+                        response_lines.append(f"{item_info['position']}. [{item_info['name'].capitalize()}](https://stats.fm/genre/{item_info['name']}) ({item_info['streams']} {streams_text})\n")
+                
+                response = ''.join(response_lines)
                 bot.delete_message(chat_id, temp_message.message_id)
                 send_long_message(bot, chat_id, response, parse_mode="Markdown")
             else:
@@ -647,22 +651,24 @@ def register_commands(bot):
                 username
             )
 
-            response = f"{get_text(lang, 'recommended_tracks')}:\n\n"
+            # Optimized: Build response using list and join for better performance
+            response_lines = [f"{get_text(lang, 'recommended_tracks')}:\n\n"]
             for i, track in enumerate(recommended_tracks, 1):
                 try:
-                    response += f"{i}.[{track['name']}](https://stats.fm/track/{track['id']}) - [{track['artists'][0]['name']}](https://stats.fm/artist/{track['artists'][0]['id']})\n"
+                    response_lines.append(f"{i}.[{track['name']}](https://stats.fm/track/{track['id']}) - [{track['artists'][0]['name']}](https://stats.fm/artist/{track['artists'][0]['id']})\n")
                 except (KeyError, IndexError) as e:
                     print(f"Error processing track: {e}")
                     continue
 
-            response += f"\n{get_text(lang, 'recommended_albums')}:\n\n"
+            response_lines.append(f"\n{get_text(lang, 'recommended_albums')}:\n\n")
             for i, album in enumerate(recommended_albums, 1):
                 try:
-                    response += f"{i}.[{album['name']}](https://stats.fm/album/{album['id']}) - [{album['artists'][0]['name']}](https://stats.fm/artist/{album['artists'][0]['id']})\n"
+                    response_lines.append(f"{i}.[{album['name']}](https://stats.fm/album/{album['id']}) - [{album['artists'][0]['name']}](https://stats.fm/artist/{album['artists'][0]['id']})\n")
                 except (KeyError, IndexError) as e:
                     print(f"Error processing album: {e}")
                     continue
 
+            response = ''.join(response_lines)
             bot.delete_message(chat_id, temp_message.message_id)
             send_long_message(bot, chat_id, response, parse_mode="Markdown")
         except Exception as e:
@@ -708,35 +714,38 @@ def register_commands(bot):
                 return
             all_items = get_all_items(username, "lifetime", "albums")
 
+            # Optimized: Single pass through albums instead of nested loops
             top_albums_by_year = {}
+            for album in all_items:
+                release_date = album['album'].get('releaseDate')
+                if release_date:
+                    try:
+                        release_year = datetime.fromtimestamp(release_date / 1000).year
+                        # Only store the first album for each year (since albums are already sorted by streams)
+                        if release_year not in top_albums_by_year:
+                            top_albums_by_year[release_year] = album
+                    except Exception as e:
+                        continue
 
-            for year in range(1971, datetime.now().year+1):
-                for album in all_items:
-                    release_date = album['album'].get('releaseDate')
-                    if release_date:
-                        try:
-                            release_year = datetime.fromtimestamp(release_date / 1000).year
-                            if release_year == year:
-                                if year not in top_albums_by_year:
-                                    top_albums_by_year[year] = album
-                                    break
-                        except Exception as e:
-                            continue
-
+            # Optimized: Build response using list and join for better performance
             # response = get_text(lang, "top_albums_by_year") + ":\n\n"
-            response = "\n\n"
-            for year, album in top_albums_by_year.items():
-                response += (
+            response_lines = ["\n"]
+            for year in sorted(top_albums_by_year.keys()):
+                album = top_albums_by_year[year]
+                artist_name = album['album']['artists'][0]['name'] if len(album['album']['artists']) > 0 else 'N/A'
+                artist_id = album['album']['artists'][0]['id'] if len(album['album']['artists']) > 0 else ''
+                response_lines.append(
                     "{}: [{}](https://stats.fm/album/{}) - [{}](https://stats.fm/artist/{}) - {} {}\n".format(
                         year,
                         album['album']['name'].replace('[', '\\[').replace(']', '\\]'),
                         album['album']['id'],
-                        album['album']['artists'][0]['name'] if len(album['album']['artists']) > 0 else 'N/A',
-                        album['album']['artists'][0]['id'] if len(album['album']['artists']) > 0 else '',
+                        artist_name,
+                        artist_id,
                         album['streams'],
                         get_text(lang, 'streams')
                     )
                 )
+            response = ''.join(response_lines)
 
             bot.delete_message(chat_id, temp_message.message_id)
             send_long_message(bot, chat_id, response, parse_mode="Markdown")
